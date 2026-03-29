@@ -1,7 +1,7 @@
 import csv
 import json
 from pathlib import Path
-from typing import Iterable
+from typing import Iterable, Optional
 
 from utils.schemas import InvestigationRecord, SearchBrief
 
@@ -157,12 +157,12 @@ def write_summary(path: Path, leads: list[InvestigationRecord], brief: SearchBri
     path.write_text("\n".join(lines), encoding="utf-8")
 
 
-def write_json(path: Path, leads: list[InvestigationRecord], brief: SearchBrief) -> None:
-    payload = build_result_payload(leads, brief)
+def write_json(path: Path, leads: list[InvestigationRecord], brief: SearchBrief, trace: Optional[list[str]] = None) -> None:
+    payload = build_result_payload(leads, brief, trace=trace)
     path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 
-def build_result_payload(leads: list[InvestigationRecord], brief: SearchBrief) -> dict:
+def build_result_payload(leads: list[InvestigationRecord], brief: SearchBrief, trace: Optional[list[str]] = None) -> dict:
     return {
         "query": brief.raw_query,
         "target_type": brief.target_type,
@@ -171,6 +171,7 @@ def build_result_payload(leads: list[InvestigationRecord], brief: SearchBrief) -
         "requested_attribute": brief.requested_attribute,
         "investigation_goal": brief.investigation_goal,
         "search_backend": brief.search_backend,
+        "trace": trace or [],
         "result_count": len(leads),
         "results": [
             {

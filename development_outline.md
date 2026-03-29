@@ -12,7 +12,8 @@ The repository has already moved beyond the initial outline in several important
 - planner and reasoning steps support structured LLM-backed execution with deterministic fallback
 - search now uses a provider interface:
   - `SEARCH_BACKEND=mock` is implemented
-  - `SEARCH_BACKEND=live` is reserved for the next integration step
+  - `SEARCH_BACKEND=live` is implemented with richer same-domain page fetching
+  - `SEARCH_BACKEND=tavily` is implemented for production-style search discovery when `TAVILY_API_KEY` is set
 - validation is domain-aware and distinguishes:
   - `cross_domain`
   - `same_domain_only`
@@ -22,6 +23,12 @@ The repository has already moved beyond the initial outline in several important
   - `output_<run_id>.csv`
   - `summary_<run_id>.md`
   - `result_<run_id>.json`
+- a lightweight API layer is implemented:
+  - `/`
+  - `/health`
+  - `/capabilities`
+  - `/investigate`
+- a lightweight browser UI is implemented on top of the API
 - investigation works across:
   - companies
   - people
@@ -29,10 +36,10 @@ The repository has already moved beyond the initial outline in several important
 
 Still pending for the next phase:
 
-- production search backend
-- richer live source fetching and parsing
+- stronger semantic extraction from live pages
+- source reputation scoring
 - richer human review workflow
-- lightweight UI layer
+- auth/background job support if the API is hardened beyond demo usage
 
 Target demo:
 

@@ -14,6 +14,7 @@ from utils.schemas import (
 
 class GraphState(TypedDict, total=False):
     query: str
+    search_backend_override: str
     brief: SearchBrief
     candidates: list[CandidateEntity]
     extracted_entities: list[ExtractedEntity]

@@ -1,5 +1,5 @@
-import re
 import os
+import re
 
 from utils.schemas import SearchBrief
 
@@ -31,7 +31,7 @@ KNOWN_ATTRIBUTES = [
 ]
 
 
-def parse_query(query: str) -> SearchBrief:
+def parse_query(query: str, search_backend_override: str = "") -> SearchBrief:
     normalized_query = " ".join(query.split())
     lower_query = normalized_query.lower()
     target_type = _infer_target_type(lower_query)
@@ -58,7 +58,7 @@ def parse_query(query: str) -> SearchBrief:
         requested_attribute=requested_attribute or "",
         investigation_goal=investigation_goal,
         search_queries=search_queries,
-        search_backend=os.getenv("SEARCH_BACKEND", "mock").strip().lower(),
+        search_backend=(search_backend_override or os.getenv("SEARCH_BACKEND", "mock")).strip().lower(),
     )
 
 

@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Hackathon Multi-Agent Research Copilot</title>
+  <style>
+    :root {
+      --bg: #f4efe8;
+      --card: #fffaf4;
+      --ink: #1f2a2e;
+      --muted: #5f6b70;
+      --accent: #0f766e;
+      --accent-soft: #d8f0ea;
+      --line: #d8d1c7;
+      --warn: #8a3b12;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", Tahoma, sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at top left, #fce6cf, transparent 28%),
+        radial-gradient(circle at top right, #d9efe8, transparent 26%),
+        var(--bg);
+    }
+    main {
+      max-width: 1120px;
+      margin: 0 auto;
+      padding: 32px 20px 48px;
+    }
+    .hero {
+      display: grid;
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+    .hero h1 {
+      margin: 0;
+      font-size: clamp(2rem, 4vw, 3.5rem);
+      line-height: 1;
+    }
+    .hero p {
+      margin: 0;
+      color: var(--muted);
+      max-width: 720px;
+      font-size: 1rem;
+    }
+    .layout {
+      display: grid;
+      gap: 20px;
+      grid-template-columns: minmax(320px, 420px) minmax(0, 1fr);
+    }
+    .panel {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 18px;
+      box-shadow: 0 10px 30px rgba(31, 42, 46, 0.06);
+    }
+    form {
+      display: grid;
+      gap: 14px;
+    }
+    label {
+      display: grid;
+      gap: 6px;
+      font-size: 0.92rem;
+      color: var(--muted);
+    }
+    textarea, input, select, button {
+      font: inherit;
+    }
+    textarea, input, select {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 12px 14px;
+      background: #fff;
+      color: var(--ink);
+    }
+    textarea {
+      min-height: 148px;
+      resize: vertical;
+    }
+    button {
+      border: 0;
+      border-radius: 999px;
+      padding: 12px 18px;
+      background: var(--accent);
+      color: #fff;
+      cursor: pointer;
+      font-weight: 600;
+    }
+    button[disabled] {
+      opacity: 0.7;
+      cursor: wait;
+    }
+    .meta, .results, .trace {
+      display: grid;
+      gap: 12px;
+    }
+    .chip-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .chip {
+      background: var(--accent-soft);
+      color: var(--accent);
+      border-radius: 999px;
+      padding: 6px 10px;
+      font-size: 0.82rem;
+    }
+    .result-card {
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 14px;
+      background: rgba(255,255,255,0.7);
+    }
+    .result-card h3 {
+      margin: 0 0 6px;
+      font-size: 1.05rem;
+    }
+    .result-card p {
+      margin: 6px 0;
+      color: var(--muted);
+    }
+    .trace-item, .artifact-item {
+      font-family: Consolas, monospace;
+      font-size: 0.88rem;
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 10px;
+    }
+    .warning {
+      color: var(--warn);
+      font-weight: 600;
+    }
+    @media (max-width: 920px) {
+      .layout { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <section class="hero">
+      <h1>Research Copilot</h1>
+      <p>Thin demo UI for the LangGraph workflow. Use it to run the same investigation pipeline that powers the CLI and API, then review ranked findings, trace, and artifact paths in one place.</p>
+    </section>
+    <section class="layout">
+      <article class="panel">
+        <form id="investigation-form">
+          <label>
+            Investigation request
+            <textarea id="query" name="query">Find fintech startups in New York with CTO and signs they may need workflow automation</textarea>
+          </label>
+          <label>
+            Search backend
+            <select id="search_backend" name="search_backend">
+              <option value="">Use environment default</option>
+              <option value="mock">mock</option>
+              <option value="live">live</option>
+              <option value="tavily">tavily</option>
+            </select>
+          </label>
+          <label>
+            Output directory
+            <input id="output_dir" name="output_dir" value="output">
+          </label>
+          <button id="submit-button" type="submit">Run Investigation</button>
+        </form>
+      </article>
+      <article class="panel">
+        <div class="meta" id="meta">
+          <strong>Ready.</strong>
+          <span class="warning">Live and Tavily modes depend on network availability and provider configuration.</span>
+        </div>
+        <div class="chip-row" id="chips"></div>
+        <div class="results" id="results"></div>
+        <div class="meta" id="artifacts"></div>
+        <div class="trace" id="trace"></div>
+      </article>
+    </section>
+  </main>
+  <script>
+    const form = document.getElementById("investigation-form");
+    const submitButton = document.getElementById("submit-button");
+    const meta = document.getElementById("meta");
+    const chips = document.getElementById("chips");
+    const results = document.getElementById("results");
+    const artifacts = document.getElementById("artifacts");
+    const trace = document.getElementById("trace");
+
+    function setMeta(lines) {
+      meta.innerHTML = lines.map((line) => `<div>${line}</div>`).join("");
+    }
+
+    function renderChips(payload) {
+      const items = [
+        `backend: ${payload.search_backend || "default"}`,
+        `results: ${payload.result_count}`,
+        `target: ${payload.target_type || "n/a"}`,
+        `attribute: ${payload.requested_attribute || "n/a"}`
+      ];
+      chips.innerHTML = items.map((item) => `<span class="chip">${item}</span>`).join("");
+    }
+
+    function renderResults(payload) {
+      const top = (payload.results || []).slice(0, 5);
+      if (!top.length) {
+        results.innerHTML = "<div class='result-card'><h3>No results</h3><p>The workflow completed but did not return ranked findings.</p></div>";
+        return;
+      }
+      results.innerHTML = top.map((item) => `
+        <div class="result-card">
+          <h3>${item.entity_name} <span class="chip">${item.priority_score}</span></h3>
+          <p><strong>Best fact:</strong> ${item.best_matching_fact} [${item.fact_match_type}]</p>
+          <p><strong>Why relevant:</strong> ${item.why_relevant}</p>
+          <p><strong>Reliability:</strong> ${item.validation_status} (${item.validation_score})</p>
+          <p><strong>Source pages:</strong> ${item.source_document_count} | <strong>Domains:</strong> ${(item.source_domains || []).join(", ") || "none"}</p>
+          <p><strong>Evidence URLs:</strong> ${(item.source_urls || []).join(", ") || "none"}</p>
+        </div>
+      `).join("");
+    }
+
+    function renderArtifacts(payload) {
+      const items = payload.artifacts || {};
+      const rows = Object.entries(items);
+      artifacts.innerHTML = rows.length
+        ? rows.map(([key, value]) => `<div class="artifact-item"><strong>${key}</strong>: ${value}</div>`).join("")
+        : "";
+    }
+
+    function renderTrace(payload) {
+      const items = payload.trace || [];
+      trace.innerHTML = items.length
+        ? items.map((line) => `<div class="trace-item">${line}</div>`).join("")
+        : "";
+    }
+
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      submitButton.disabled = true;
+      setMeta(["Running investigation..."]);
+      chips.innerHTML = "";
+      results.innerHTML = "";
+      artifacts.innerHTML = "";
+      trace.innerHTML = "";
+
+      const body = {
+        query: document.getElementById("query").value,
+        output_dir: document.getElementById("output_dir").value
+      };
+      const backend = document.getElementById("search_backend").value;
+      if (backend) {
+        body.search_backend = backend;
+      }
+
+      try {
+        const response = await fetch("/investigate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body)
+        });
+        const payload = await response.json();
+        if (!response.ok) {
+          throw new Error(payload.detail || "Investigation failed.");
+        }
+        setMeta([
+          `<strong>Query:</strong> ${payload.query}`,
+          `<strong>Goal:</strong> ${payload.investigation_goal || "n/a"}`
+        ]);
+        renderChips(payload);
+        renderResults(payload);
+        renderArtifacts(payload);
+        renderTrace(payload);
+      } catch (error) {
+        setMeta([`<span class="warning">${error.message}</span>`]);
+      } finally {
+        submitButton.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>

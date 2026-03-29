@@ -1,6 +1,6 @@
 import os
 from typing import List, Optional
-from urllib.parse import parse_qs, quote_plus, unquote, urlparse
+from urllib.parse import parse_qs, quote_plus, unquote, urljoin, urlparse
 
 import requests
 from bs4 import BeautifulSoup
@@ -10,12 +10,26 @@ from utils.mock_data import MOCK_ENTITIES
 from utils.schemas import CandidateEntity, SearchBrief, SourceDocument
 
 
+EDITORIAL_DOMAINS = {
+    "medium.com",
+    "substack.com",
+    "techcrunch.com",
+    "forbes.com",
+}
+
+TARGET_PATH_HINTS = {
+    "product": ["pricing", "integrations", "features", "product", "platform", "customers"],
+    "company": ["about", "team", "leadership", "customers", "solutions", "careers"],
+    "person": ["about", "team", "bio", "leadership", "speaker", "profile"],
+}
+
+
 def search_entities(brief: SearchBrief) -> List[CandidateEntity]:
-    backend = os.getenv("SEARCH_BACKEND", "mock").strip().lower()
+    backend = (brief.search_backend or os.getenv("SEARCH_BACKEND", "mock")).strip().lower()
     if backend == "mock":
         return _search_mock_entities(brief)
-    if backend == "live":
-        return _search_live_entities(brief)
+    if backend in {"live", "tavily"}:
+        return _search_live_entities(brief, backend)
     raise ValueError(f"Unsupported SEARCH_BACKEND: {backend}")
 
 
@@ -55,11 +69,11 @@ def _search_mock_entities(brief: SearchBrief) -> List[CandidateEntity]:
     return [item[1] for item in scored_candidates[:10]]
 
 
-def _search_live_entities(brief: SearchBrief) -> List[CandidateEntity]:
-    urls = _discover_urls(brief.search_queries or [brief.raw_query])
+def _search_live_entities(brief: SearchBrief, backend: str) -> List[CandidateEntity]:
+    urls = _discover_urls(brief, backend)
     candidates: List[CandidateEntity] = []
     seen_domains: set[str] = set()
-    for url in urls[:10]:
+    for url in urls[:12]:
         primary_document = _fetch_document(url)
         if not primary_document:
             continue
@@ -68,17 +82,26 @@ def _search_live_entities(brief: SearchBrief) -> List[CandidateEntity]:
             continue
 
         root_document = _fetch_root_document(primary_document)
-        canonical_document = root_document or primary_document
-        if _should_skip_document(brief, primary_document, canonical_document):
+        source_documents = _expand_domain_documents(brief, primary_document, root_document)
+        canonical_document = _select_canonical_document(brief, primary_document, root_document, source_documents)
+        if _should_skip_document(brief, canonical_document, source_documents):
             continue
 
-        candidate = _candidate_from_documents(brief, canonical_document, primary_document, root_document)
+        candidate = _candidate_from_documents(brief, canonical_document, primary_document, source_documents)
         candidates.append(candidate)
         seen_domains.add(domain)
     return candidates
 
 
-def _discover_urls(search_queries: List[str]) -> List[str]:
+def _discover_urls(brief: SearchBrief, backend: str) -> List[str]:
+    if backend == "tavily":
+        discovered = _discover_urls_via_tavily(brief.search_queries or [brief.raw_query])
+        if discovered:
+            return discovered
+    return _discover_urls_via_duckduckgo(brief.search_queries or [brief.raw_query])
+
+
+def _discover_urls_via_duckduckgo(search_queries: List[str]) -> List[str]:
     discovered: List[str] = []
     seen: set[str] = set()
     for query in search_queries[:3]:
@@ -96,6 +119,41 @@ def _discover_urls(search_queries: List[str]) -> List[str]:
             if href and href not in seen:
                 seen.add(href)
                 discovered.append(href)
+            if len(discovered) >= 15:
+                return discovered
+    return discovered
+
+
+def _discover_urls_via_tavily(search_queries: List[str]) -> List[str]:
+    api_key = os.getenv("TAVILY_API_KEY", "").strip()
+    if not api_key:
+        return []
+
+    discovered: List[str] = []
+    seen: set[str] = set()
+    for query in search_queries[:3]:
+        try:
+            response = _http_post_json(
+                "https://api.tavily.com/search",
+                {
+                    "api_key": api_key,
+                    "query": query,
+                    "search_depth": "advanced",
+                    "max_results": 6,
+                    "include_answer": False,
+                    "include_raw_content": False,
+                },
+            )
+            response.raise_for_status()
+            payload = response.json()
+        except Exception:
+            continue
+
+        for item in payload.get("results", []):
+            url = str(item.get("url", "")).strip()
+            if url and url not in seen:
+                seen.add(url)
+                discovered.append(url)
             if len(discovered) >= 15:
                 return discovered
     return discovered
@@ -130,23 +188,15 @@ def _candidate_from_documents(
     brief: SearchBrief,
     canonical_document: SourceDocument,
     primary_document: SourceDocument,
-    root_document: Optional[SourceDocument],
+    source_documents: List[SourceDocument],
 ) -> CandidateEntity:
-    source_documents = _combine_documents(primary_document, root_document)
     name = _infer_name_from_document(canonical_document)
     summary = canonical_document.snippet or canonical_document.content[:240]
     signals = []
     for document in source_documents:
         signals.extend(_infer_signals(brief, document))
 
-    facts = [
-        {
-            "field": "canonical_title",
-            "value": canonical_document.title or name,
-            "source_url": canonical_document.url,
-            "snippet": canonical_document.snippet or canonical_document.content[:180],
-        }
-    ]
+    facts = _build_facts(brief, canonical_document, primary_document, source_documents, name)
     if primary_document.url != canonical_document.url:
         facts.append(
             {
@@ -234,6 +284,61 @@ def _infer_signals(brief: SearchBrief, document: SourceDocument) -> List[dict]:
     return signals
 
 
+def _build_facts(
+    brief: SearchBrief,
+    canonical_document: SourceDocument,
+    primary_document: SourceDocument,
+    source_documents: List[SourceDocument],
+    name: str,
+) -> List[dict]:
+    facts = [
+        {
+            "field": "canonical_title",
+            "value": canonical_document.title or name,
+            "source_url": canonical_document.url,
+            "snippet": canonical_document.snippet or canonical_document.content[:180],
+        }
+    ]
+    if brief.subject:
+        facts.append(
+            {
+                "field": "query_subject",
+                "value": brief.subject,
+                "source_url": canonical_document.url,
+                "snippet": canonical_document.snippet or canonical_document.content[:180],
+            }
+        )
+
+    seen_fact_keys = {(item["field"], item["source_url"]) for item in facts}
+    for document in source_documents:
+        field = _document_fact_field(document)
+        if (field, document.url) in seen_fact_keys:
+            continue
+        facts.append(
+            {
+                "field": field,
+                "value": document.title or _infer_name_from_document(document),
+                "source_url": document.url,
+                "snippet": document.snippet or document.content[:180],
+            }
+        )
+        seen_fact_keys.add((field, document.url))
+    return facts
+
+
+def _document_fact_field(document: SourceDocument) -> str:
+    path = urlparse(document.url).path.lower()
+    if "pricing" in path:
+        return "pricing_page_title"
+    if "integration" in path or "connector" in path or "api" in path:
+        return "integration_page_title"
+    if "feature" in path or "product" in path or "platform" in path:
+        return "product_page_title"
+    if "about" in path or "team" in path or "leadership" in path:
+        return "company_profile_page_title"
+    return "page_title"
+
+
 def _normalize_domain(url: str) -> str:
     parsed = urlparse(url)
     hostname = parsed.netloc.lower().strip()
@@ -264,17 +369,141 @@ def _fetch_root_document(document: SourceDocument) -> Optional[SourceDocument]:
     return _fetch_document(root_url)
 
 
-def _should_skip_document(
-    brief: SearchBrief, primary_document: SourceDocument, canonical_document: SourceDocument
-) -> bool:
+def _expand_domain_documents(
+    brief: SearchBrief,
+    primary_document: SourceDocument,
+    root_document: Optional[SourceDocument],
+) -> List[SourceDocument]:
+    seed_documents = _combine_documents(primary_document, root_document)
+    scored_links: dict[str, int] = {}
+    for document in seed_documents:
+        for url, score in _discover_relevant_links(brief, document).items():
+            current_score = scored_links.get(url, 0)
+            if score > current_score:
+                scored_links[url] = score
+
+    expanded_documents = list(seed_documents)
+    fetched_urls = {document.url for document in expanded_documents}
+    ranked_urls = sorted(scored_links.items(), key=lambda item: item[1], reverse=True)
+    for url, _score in ranked_urls:
+        if len(expanded_documents) >= 5:
+            break
+        if url in fetched_urls:
+            continue
+        document = _fetch_document(url)
+        if not document:
+            continue
+        expanded_documents.append(document)
+        fetched_urls.add(url)
+
+    unique: dict[str, SourceDocument] = {}
+    for document in expanded_documents:
+        unique[document.url] = document
+    return list(unique.values())
+
+
+def _discover_relevant_links(brief: SearchBrief, document: SourceDocument) -> dict[str, int]:
+    try:
+        response = _http_get(document.url)
+        response.raise_for_status()
+    except Exception:
+        return {}
+
+    soup = BeautifulSoup(response.text, "html.parser")
+    base_domain = _normalize_domain(document.url)
+    keywords = _candidate_keywords(brief)
+    scored_links: dict[str, int] = {}
+    for anchor in soup.select("a[href]"):
+        href = anchor.get("href", "").strip()
+        resolved = _normalize_candidate_link(document.url, href)
+        if not resolved:
+            continue
+        if _normalize_domain(resolved) != base_domain:
+            continue
+
+        anchor_text = " ".join(anchor.stripped_strings).lower()
+        haystack = f"{resolved.lower()} {anchor_text}"
+        score = 0
+        for keyword in keywords:
+            if keyword and keyword in haystack:
+                score += 2
+        for hint in TARGET_PATH_HINTS.get(brief.target_type, []):
+            if hint in haystack:
+                score += 3
+        if score > 0:
+            scored_links[resolved] = max(scored_links.get(resolved, 0), score)
+    return scored_links
+
+
+def _candidate_keywords(brief: SearchBrief) -> List[str]:
+    keywords = [brief.requested_attribute, brief.subject, brief.investigation_goal]
+    keywords.extend(TARGET_PATH_HINTS.get(brief.target_type, []))
+    keywords.extend(["pricing", "integration", "security", "api", "demo", "product"])
+    normalized = []
+    for keyword in keywords:
+        if not keyword:
+            continue
+        normalized.extend(part.strip().lower() for part in keyword.split() if len(part.strip()) > 2)
+    return sorted(set(normalized))
+
+
+def _normalize_candidate_link(base_url: str, href: str) -> str:
+    if not href or href.startswith("#") or href.startswith("mailto:") or href.startswith("javascript:"):
+        return ""
+    resolved = _normalize_result_url(urljoin(base_url, href))
+    parsed = urlparse(resolved)
+    if parsed.scheme not in {"http", "https"}:
+        return ""
+    return resolved
+
+
+def _select_canonical_document(
+    brief: SearchBrief,
+    primary_document: SourceDocument,
+    root_document: Optional[SourceDocument],
+    source_documents: List[SourceDocument],
+) -> SourceDocument:
+    candidates = [doc for doc in source_documents if not _looks_editorial(doc)]
+    if root_document and not _looks_editorial(root_document):
+        candidates.insert(0, root_document)
+    if not candidates:
+        return root_document or primary_document
+
+    ranked = sorted(candidates, key=lambda doc: _document_quality_score(brief, doc), reverse=True)
+    return ranked[0]
+
+
+def _document_quality_score(brief: SearchBrief, document: SourceDocument) -> int:
+    score = 0
+    text = f"{document.title} {document.snippet} {document.content[:1200]}".lower()
+    if _looks_vendor_like(document):
+        score += 6
+    if not _looks_editorial(document):
+        score += 3
+    for hint in TARGET_PATH_HINTS.get(brief.target_type, []):
+        if hint in text or hint in document.url.lower():
+            score += 2
+    if brief.requested_attribute and brief.requested_attribute.lower() in text:
+        score += 3
+    if brief.subject:
+        for part in brief.subject.lower().split():
+            if len(part) > 3 and part in text:
+                score += 1
+    parsed = urlparse(document.url)
+    if parsed.path in {"", "/"}:
+        score += 1
+    return score
+
+
+def _should_skip_document(brief: SearchBrief, canonical_document: SourceDocument, source_documents: List[SourceDocument]) -> bool:
+    if canonical_document.domain in EDITORIAL_DOMAINS:
+        return True
     if brief.target_type != "product":
         return False
 
-    primary_editorial = _looks_editorial(primary_document)
-    canonical_editorial = _looks_editorial(canonical_document)
-    vendor_like = _looks_vendor_like(canonical_document)
-
-    return primary_editorial and canonical_editorial and not vendor_like
+    vendor_like_count = sum(1 for doc in source_documents if _looks_vendor_like(doc))
+    editorial_count = sum(1 for doc in source_documents if _looks_editorial(doc))
+    return vendor_like_count == 0 or (editorial_count >= len(source_documents) and not _looks_vendor_like(canonical_document))
 
 
 def _looks_editorial(document: SourceDocument) -> bool:
@@ -294,6 +523,8 @@ def _looks_editorial(document: SourceDocument) -> bool:
         "/resources/",
         "/tools/",
         "/news/",
+        "/article/",
+        "/blog",
     ]
     return any(term in text for term in editorial_terms)
 
@@ -311,6 +542,9 @@ def _looks_vendor_like(document: SourceDocument) -> bool:
         "product",
         "customers",
         "enterprise",
+        "get started",
+        "free trial",
+        "use cases",
     ]
     return any(term in text for term in vendor_terms)
 
@@ -339,10 +573,24 @@ def _domain_to_name(domain: str) -> str:
 
 
 def _http_get(url: str) -> Response:
-    headers = {"User-Agent": "Mozilla/5.0"}
+    headers = {"User-Agent": "Mozilla/5.0", "Accept-Language": "en-US,en;q=0.9"}
     try:
         return requests.get(url, headers=headers, timeout=10)
     except requests.exceptions.ProxyError:
         session = requests.Session()
         session.trust_env = False
         return session.get(url, headers=headers, timeout=10)
+
+
+def _http_post_json(url: str, payload: dict) -> Response:
+    headers = {
+        "User-Agent": "Mozilla/5.0",
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+    }
+    try:
+        return requests.post(url, headers=headers, json=payload, timeout=15)
+    except requests.exceptions.ProxyError:
+        session = requests.Session()
+        session.trust_env = False
+        return session.post(url, headers=headers, json=payload, timeout=15)

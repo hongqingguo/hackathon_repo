@@ -5,8 +5,8 @@ from utils.schemas import SearchBrief
 
 
 class PlannerAgent:
-    def run(self, query: str) -> SearchBrief:
-        fallback = parse_query(query)
+    def run(self, query: str, search_backend_override: str = "") -> SearchBrief:
+        fallback = parse_query(query, search_backend_override=search_backend_override)
         if not has_openai_config():
             return fallback
 

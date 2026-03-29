@@ -38,7 +38,7 @@ def build_research_workflow():
 
 def _plan_request(state: GraphState) -> GraphState:
     agent = PlannerAgent()
-    brief = agent.run(state["query"])
+    brief = agent.run(state["query"], search_backend_override=state.get("search_backend_override", ""))
     return {
         "brief": brief,
         "trace": [

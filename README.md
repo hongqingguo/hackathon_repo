@@ -40,13 +40,16 @@ Implemented today:
 - lightweight human-review flags and review queue output
 - structured LLM planner and reasoner with deterministic fallback
 - paired CSV/Markdown plus JSON output artifacts
-- lightweight live search and page-fetch scaffolding
+- live search with richer same-domain page fetching
+- provider-backed search options: `mock`, `live`, and `tavily`
+- FastAPI layer with `/`, `/health`, `/capabilities`, and `/investigate`
+- thin browser UI for running the workflow without the CLI
 
 Still pending:
 
-- production search backend
-- richer live page fetching and parsing
-- UI layer
+- deeper source reputation scoring
+- stronger live-page semantic extraction beyond heuristic normalization
+- auth/background jobs if the API is productized
 
 If `OPENAI_API_KEY` is set, the planner and reasoner can use `langchain-openai` for structured LLM-backed planning and evidence interpretation. If no key is set, the workflow falls back to deterministic local logic.
 
@@ -67,6 +70,7 @@ Recommended environment variables:
 - `OPENAI_TIMEOUT=30`
 - `OPENAI_MAX_RETRIES=2`
 - `SEARCH_BACKEND=mock`
+- `TAVILY_API_KEY` if you want API-backed production-style search
 
 Run:
 
@@ -89,6 +93,7 @@ uvicorn api_server:app --reload
 
 Open:
 
+- `http://127.0.0.1:8000/`
 - `http://127.0.0.1:8000/docs`
 - `http://127.0.0.1:8000/health`
 
@@ -101,6 +106,12 @@ Each run generates a matched pair:
 - `output/result_<run_id>.json`
 
 The API also returns the same result payload directly from `/investigate`.
+The API returns:
+
+- investigation metadata
+- workflow trace
+- ranked results
+- artifact paths
 
 CSV fields include:
 
@@ -127,11 +138,13 @@ This keeps the system honest during demos and better aligned with production tru
 
 Current limitations are explicit:
 
-- live search currently uses a lightweight heuristic backend, not a production search API
-- live extraction currently normalizes fetched pages heuristically and does not yet perform deep crawling
+- `live` search still depends on public web pages and heuristic normalization
+- `tavily` improves discovery quality but downstream page interpretation is still heuristic
+- live extraction follows a small set of relevant same-domain pages, not full deep crawling
 - LLM nodes depend on `OPENAI_API_KEY`
 - validation is domain-aware but not yet source-reputation-aware
+- API routes and the thin UI are lightweight wrappers around the workflow and do not yet include auth, background jobs, or async execution
 
 ## Next Step
 
-The next planned milestone is upgrading the live backend from heuristic web ingestion to a production search provider and richer page extraction while preserving the current graph, skills, and typed state contracts.
+The next planned milestone is improving semantic extraction quality and source reputation scoring while preserving the current graph, skills, and typed state contracts.
