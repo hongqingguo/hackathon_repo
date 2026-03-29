@@ -158,7 +158,12 @@ def write_summary(path: Path, leads: list[InvestigationRecord], brief: SearchBri
 
 
 def write_json(path: Path, leads: list[InvestigationRecord], brief: SearchBrief) -> None:
-    payload = {
+    payload = build_result_payload(leads, brief)
+    path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+
+def build_result_payload(leads: list[InvestigationRecord], brief: SearchBrief) -> dict:
+    return {
         "query": brief.raw_query,
         "target_type": brief.target_type,
         "subject": brief.subject,
@@ -200,7 +205,6 @@ def write_json(path: Path, leads: list[InvestigationRecord], brief: SearchBrief)
             for lead in leads
         ],
     }
-    path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 
 def _most_common_signals(leads: list[InvestigationRecord]) -> list[str]:

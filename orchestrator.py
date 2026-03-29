@@ -5,11 +5,12 @@ from typing import List
 
 from workflows.research_workflow import build_research_workflow
 from utils.formatters import write_csv, write_summary
-from utils.schemas import InvestigationRecord
+from utils.schemas import InvestigationRecord, SearchBrief
 
 
 @dataclass
 class PipelineResult:
+    brief: SearchBrief
     leads: List[InvestigationRecord]
     csv_path: Path
     summary_path: Path
@@ -36,4 +37,4 @@ def run_pipeline(query: str, output_dir: Path) -> PipelineResult:
     from utils.formatters import write_json
     write_json(json_path, leads, brief)
 
-    return PipelineResult(leads=leads, csv_path=csv_path, summary_path=summary_path, json_path=json_path)
+    return PipelineResult(brief=brief, leads=leads, csv_path=csv_path, summary_path=summary_path, json_path=json_path)

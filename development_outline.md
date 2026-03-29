@@ -32,7 +32,7 @@ Still pending for the next phase:
 - production search backend
 - richer live source fetching and parsing
 - richer human review workflow
-- lightweight UI or API layer
+- lightweight UI layer
 
 Target demo:
 

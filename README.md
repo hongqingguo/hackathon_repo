@@ -46,7 +46,7 @@ Still pending:
 
 - production search backend
 - richer live page fetching and parsing
-- API or UI layer
+- UI layer
 
 If `OPENAI_API_KEY` is set, the planner and reasoner can use `langchain-openai` for structured LLM-backed planning and evidence interpretation. If no key is set, the workflow falls back to deterministic local logic.
 
@@ -81,6 +81,17 @@ python main.py "Find fintech startups in New York with CTO and signs they may ne
 python main.py "Compare people in New York about founder and technical budget influence"
 ```
 
+Run the API:
+
+```bash
+uvicorn api_server:app --reload
+```
+
+Open:
+
+- `http://127.0.0.1:8000/docs`
+- `http://127.0.0.1:8000/health`
+
 ## Outputs
 
 Each run generates a matched pair:
@@ -88,6 +99,8 @@ Each run generates a matched pair:
 - `output/output_<run_id>.csv`
 - `output/summary_<run_id>.md`
 - `output/result_<run_id>.json`
+
+The API also returns the same result payload directly from `/investigate`.
 
 CSV fields include:
 
