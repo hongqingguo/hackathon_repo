@@ -10,6 +10,8 @@ This repo contains a LangGraph-based research workflow that separates:
 
 Current runtime supports generalized entity investigation across `company`, `person`, and `product` examples using tool-backed search, evidence extraction, reasoning, validation, and scoring.
 
+If `OPENAI_API_KEY` is set, the planner and reasoner can use `langchain-openai` for structured LLM-backed planning and evidence interpretation. If no key is set, the workflow falls back to deterministic local logic.
+
 Run:
 
 ```bash

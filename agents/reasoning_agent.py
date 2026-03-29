@@ -1,5 +1,7 @@
 from typing import Dict, List, Optional, Tuple
 
+from llm.config import has_openai_config
+from llm.reasoner_service import ReasonerLLM
 from utils.schemas import Evidence, QualifiedEntity, ReasonedEntity, SearchBrief
 
 
@@ -16,6 +18,21 @@ class ReasoningAgent:
 
     def run(self, brief: SearchBrief, lead: QualifiedEntity) -> ReasonedEntity:
         requested_attribute = brief.requested_attribute or "relevant facts"
+        llm_result = self._run_llm_reasoner(requested_attribute, lead.evidence)
+        if llm_result:
+            source_urls = self._source_urls_for_supporting_values(llm_result.supporting_values, lead.evidence)
+            if not source_urls:
+                source_urls = sorted({item.source_url for item in lead.evidence})
+            return ReasonedEntity(
+                **lead.__dict__,
+                requested_attribute=requested_attribute,
+                best_matching_fact=llm_result.best_matching_fact,
+                fact_match_type=llm_result.fact_match_type,
+                reasoning_summary=llm_result.reasoning_summary,
+                confidence=llm_result.confidence,
+                source_urls=source_urls,
+            )
+
         direct_match = self._find_direct_match(requested_attribute, lead.evidence)
 
         if direct_match:
@@ -87,3 +104,20 @@ class ReasoningAgent:
 
     def _source_urls_for_value(self, value: str, evidence: List[Evidence]) -> List[str]:
         return sorted({item.source_url for item in evidence if item.value.lower() == value.lower()})
+
+    def _source_urls_for_supporting_values(self, values: List[str], evidence: List[Evidence]) -> List[str]:
+        normalized_values = {value.lower() for value in values}
+        return sorted({item.source_url for item in evidence if item.value.lower() in normalized_values})
+
+    def _run_llm_reasoner(self, requested_attribute: str, evidence: List[Evidence]):
+        if not has_openai_config():
+            return None
+
+        evidence_lines = [
+            f"- field={item.field}; value={item.value}; source={item.source_url}; snippet={item.snippet}"
+            for item in evidence
+        ]
+        try:
+            return ReasonerLLM().invoke(requested_attribute, evidence_lines)
+        except Exception:
+            return None
