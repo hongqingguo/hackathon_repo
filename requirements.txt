@@ -1,0 +1,2 @@
+langchain-core>=0.3.83
+langgraph>=0.6.11
