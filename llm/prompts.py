@@ -35,3 +35,46 @@ def build_reasoner_user_prompt(requested_attribute: str, evidence_lines: list[st
         f"Available evidence:\n{joined_evidence}\n"
         "Pick the best matching fact from the evidence."
     )
+
+
+RETRIEVAL_SYSTEM_PROMPT = """You are a retrieval-quality agent in a research workflow.
+Judge whether a fetched webpage is useful for identifying or verifying the target entity for the user's investigation.
+
+Rules:
+- Do not invent entity names that are not supported by the page.
+- page_role must be one of: canonical, supporting, external_verification, irrelevant.
+- canonical means this page is a strong first-party identity page for the entity.
+- supporting means this page is about the same entity and adds first-party or close supporting evidence.
+- external_verification means this page is about the same entity from another source and can corroborate claims.
+- irrelevant means the page should not be used.
+- same_entity should be true only when the page is actually about the candidate entity.
+- supports_requested_topic should be true only if the page helps with the requested attribute or investigation goal.
+- Return only structured output."""
+
+
+def build_retrieval_user_prompt(
+    raw_query: str,
+    target_type: str,
+    requested_attribute: str,
+    investigation_goal: str,
+    document_url: str,
+    document_title: str,
+    document_snippet: str,
+    document_content: str,
+    candidate_name: str = "",
+    canonical_domain: str = "",
+    first_party: bool = False,
+) -> str:
+    return (
+        f"User query: {raw_query}\n"
+        f"Target type: {target_type}\n"
+        f"Requested attribute: {requested_attribute or 'n/a'}\n"
+        f"Investigation goal: {investigation_goal or 'n/a'}\n"
+        f"Candidate name: {candidate_name or 'unknown'}\n"
+        f"Canonical domain: {canonical_domain or 'unknown'}\n"
+        f"First party page: {first_party}\n"
+        f"Page URL: {document_url}\n"
+        f"Page title: {document_title}\n"
+        f"Page snippet: {document_snippet}\n"
+        f"Page content excerpt:\n{document_content[:2500]}"
+    )

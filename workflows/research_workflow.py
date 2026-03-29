@@ -53,7 +53,7 @@ def _research(state: GraphState) -> GraphState:
     candidates = agent.run(state["brief"])
     return {
         "candidates": candidates,
-        "trace": [f"[research] Retrieved {len(candidates)} candidate entities via tool-backed search."],
+        "trace": [f"[research] Search agent produced {len(candidates)} candidate entities after verification."],
     }
 
 

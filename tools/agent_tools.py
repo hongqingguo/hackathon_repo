@@ -1,33 +1,6 @@
-from langchain_core.tools import tool
 from urllib.parse import urlparse
 
-from tools.search_provider import search_entities
-from utils.schemas import SearchBrief
-
-
-@tool
-def search_entities_tool(
-    raw_query: str,
-    target_type: str,
-    subject: str,
-    geography: str,
-    requested_attribute: str,
-    investigation_goal: str,
-    search_queries: list[str],
-    search_backend: str,
-) -> list[dict]:
-    """Search candidate entities from the local knowledge source."""
-    brief = SearchBrief(
-        raw_query=raw_query,
-        target_type=target_type,
-        subject=subject,
-        geography=geography,
-        requested_attribute=requested_attribute,
-        investigation_goal=investigation_goal,
-        search_queries=search_queries,
-        search_backend=search_backend,
-    )
-    return [_serialize_candidate(entity) for entity in search_entities(brief)]
+from langchain_core.tools import tool
 
 
 @tool
@@ -182,17 +155,3 @@ def _normalize_domain(url: str) -> str:
     if hostname.startswith("www."):
         hostname = hostname[4:]
     return hostname
-
-
-def _serialize_candidate(entity) -> dict:
-    return {
-        "name": entity.name,
-        "entity_type": entity.entity_type,
-        "canonical_url": entity.canonical_url,
-        "location": entity.location,
-        "summary": entity.summary,
-        "tags": entity.tags,
-        "facts": entity.facts,
-        "signals": entity.signals,
-        "source_documents": [doc.__dict__ for doc in entity.source_documents],
-    }

@@ -390,7 +390,7 @@ project/
     scoring_skill.py
     formatting_skill.py
   tools/
-    search_provider.py
+    search_provider_llm.py
     agent_tools.py
   llm/
     client.py
@@ -472,7 +472,7 @@ High-value optional feature:
 
 ## Debug Order
 
-1. Research agent returns URLs.
+1. Search agent returns verified candidate entities with source pages.
 2. Extraction skill returns valid JSON plus evidence objects.
 3. Qualification skill rejects obvious bad leads.
 4. Reasoning agent handles missing titles correctly.
