@@ -27,6 +27,8 @@ def write_csv(path: Path, leads: Iterable[InvestigationRecord], brief: SearchBri
         "validation_notes",
         "validation_score",
         "validation_scope",
+        "human_review_required",
+        "human_review_reason",
         "corroborated_fields",
         "conflicting_fields",
         "validation_sources",
@@ -60,6 +62,8 @@ def write_csv(path: Path, leads: Iterable[InvestigationRecord], brief: SearchBri
                     "validation_notes": lead.validation_notes,
                     "validation_score": lead.validation_score,
                     "validation_scope": lead.validation_scope,
+                    "human_review_required": lead.human_review_required,
+                    "human_review_reason": lead.human_review_reason,
                     "corroborated_fields": "; ".join(lead.corroborated_fields),
                     "conflicting_fields": "; ".join(lead.conflicting_fields),
                     "validation_sources": "; ".join(lead.validation_source_urls),
@@ -110,6 +114,8 @@ def write_summary(path: Path, leads: list[InvestigationRecord], brief: SearchBri
                 f"- Reliability: {lead.validation_status} ({lead.validation_score})",
                 f"- Validation scope: {lead.validation_scope}",
                 f"- Validation notes: {lead.validation_notes}",
+                f"- Human review required: {lead.human_review_required}",
+                f"- Human review reason: {lead.human_review_reason or 'none'}",
                 f"- Validation sources: {', '.join(lead.validation_source_urls)}",
                 f"- Evidence URLs: {', '.join(lead.source_urls)}",
                 "",
@@ -125,6 +131,25 @@ def write_summary(path: Path, leads: list[InvestigationRecord], brief: SearchBri
             "## Evidence Trail",
             "",
             "Each result keeps source URLs so a reviewer can audit where the recommendation came from. Cross-source validation highlights what is corroborated and what still needs review.",
+            "",
+            "## Human Review Queue",
+            "",
+        ]
+    )
+
+    review_queue = [lead for lead in leads if lead.human_review_required][:5]
+    if review_queue:
+        for lead in review_queue:
+            lines.extend(
+                [
+                    f"- {lead.entity_name}: {lead.human_review_reason}",
+                ]
+            )
+    else:
+        lines.extend(["- No items currently require manual review."])
+
+    lines.extend(
+        [
             "",
         ]
     )
@@ -162,6 +187,8 @@ def write_json(path: Path, leads: list[InvestigationRecord], brief: SearchBrief)
                 "validation_notes": lead.validation_notes,
                 "validation_score": lead.validation_score,
                 "validation_scope": lead.validation_scope,
+                "human_review_required": lead.human_review_required,
+                "human_review_reason": lead.human_review_reason,
                 "corroborated_fields": lead.corroborated_fields,
                 "conflicting_fields": lead.conflicting_fields,
                 "validation_sources": lead.validation_source_urls,

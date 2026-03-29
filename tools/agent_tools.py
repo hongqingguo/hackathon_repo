@@ -7,22 +7,25 @@ from utils.schemas import SearchBrief
 
 @tool
 def search_entities_tool(
+    raw_query: str,
     target_type: str,
     subject: str,
     geography: str,
     requested_attribute: str,
     investigation_goal: str,
+    search_queries: list[str],
+    search_backend: str,
 ) -> list[dict]:
     """Search candidate entities from the local knowledge source."""
     brief = SearchBrief(
-        raw_query="",
+        raw_query=raw_query,
         target_type=target_type,
         subject=subject,
         geography=geography,
         requested_attribute=requested_attribute,
         investigation_goal=investigation_goal,
-        search_queries=[],
-        search_backend="",
+        search_queries=search_queries,
+        search_backend=search_backend,
     )
     return [_serialize_candidate(entity) for entity in search_entities(brief)]
 
@@ -133,6 +136,8 @@ def compare_evidence_tool(
             f"Conflicting source evidence was detected for {', '.join(conflicting_fields)}. "
             "A human should review the attached URLs before acting on the result."
         )
+        human_review_required = True
+        human_review_reason = "Conflicting source evidence detected."
     elif corroborated_fields:
         status = "high" if score >= 0.75 else "medium"
         validation_scope = "cross_domain"
@@ -140,6 +145,8 @@ def compare_evidence_tool(
             f"The result is supported by cross-domain agreement on {', '.join(corroborated_fields)}. "
             f"Fact selection remains {fact_match_type}."
         )
+        human_review_required = False
+        human_review_reason = ""
     elif weak_same_domain_support:
         status = "low"
         validation_scope = "same_domain_only"
@@ -147,16 +154,22 @@ def compare_evidence_tool(
             f"Support was found across multiple pages on the same domain for {', '.join(weak_same_domain_support)}, "
             "but true cross-domain corroboration is still missing."
         )
+        human_review_required = True
+        human_review_reason = "Only same-domain support was found."
     else:
         status = "low"
         validation_scope = "insufficient"
         notes = "The result relies on limited source overlap and lacks cross-domain corroboration."
+        human_review_required = True
+        human_review_reason = "Insufficient corroboration for confident automation."
 
     return {
         "validation_status": status,
         "validation_notes": notes,
         "validation_score": score,
         "validation_scope": validation_scope,
+        "human_review_required": human_review_required,
+        "human_review_reason": human_review_reason,
         "corroborated_fields": corroborated_fields,
         "conflicting_fields": conflicting_fields,
         "validation_source_urls": sorted(validation_domains),

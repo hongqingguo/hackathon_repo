@@ -17,9 +17,11 @@ The repository has already moved beyond the initial outline in several important
   - `cross_domain`
   - `same_domain_only`
   - `insufficient`
+- lightweight human-review flags and a review queue are included in outputs
 - each run now generates matched output pairs:
   - `output_<run_id>.csv`
   - `summary_<run_id>.md`
+  - `result_<run_id>.json`
 - investigation works across:
   - companies
   - people
@@ -29,7 +31,7 @@ Still pending for the next phase:
 
 - production search backend
 - richer live source fetching and parsing
-- human review checkpoints
+- richer human review workflow
 - lightweight UI or API layer
 
 Target demo:

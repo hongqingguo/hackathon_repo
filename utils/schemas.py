@@ -81,6 +81,8 @@ class ValidatedEntity(ReasonedEntity):
     validation_notes: str
     validation_score: float
     validation_scope: str
+    human_review_required: bool
+    human_review_reason: str
     corroborated_fields: List[str]
     conflicting_fields: List[str]
     validation_source_urls: List[str]

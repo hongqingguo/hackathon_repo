@@ -27,6 +27,7 @@ Current workflow:
 
 - `Phase 1`: complete
 - `Phase 2`: in progress
+- `Phase 3`: started
 
 Implemented today:
 
@@ -36,13 +37,15 @@ Implemented today:
 - source-backed evidence extraction
 - fallback reasoning for missing facts
 - domain-aware validation logic
+- lightweight human-review flags and review queue output
 - structured LLM planner and reasoner with deterministic fallback
+- paired CSV/Markdown plus JSON output artifacts
+- lightweight live search and page-fetch scaffolding
 
 Still pending:
 
-- real live search backend
-- live page fetching and parsing
-- human review checkpoints
+- production search backend
+- richer live page fetching and parsing
 - API or UI layer
 
 If `OPENAI_API_KEY` is set, the planner and reasoner can use `langchain-openai` for structured LLM-backed planning and evidence interpretation. If no key is set, the workflow falls back to deterministic local logic.
@@ -84,6 +87,7 @@ Each run generates a matched pair:
 
 - `output/output_<run_id>.csv`
 - `output/summary_<run_id>.md`
+- `output/result_<run_id>.json`
 
 CSV fields include:
 
@@ -93,6 +97,7 @@ CSV fields include:
 - validation status
 - validation scope
 - validation sources
+- human review flags
 - source URLs
 
 ## Validation Semantics

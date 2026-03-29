@@ -1,9 +1,10 @@
 import os
 from typing import List, Optional
-from urllib.parse import quote_plus, urlparse
+from urllib.parse import parse_qs, quote_plus, unquote, urlparse
 
 import requests
 from bs4 import BeautifulSoup
+from requests import Response
 
 from utils.mock_data import MOCK_ENTITIES
 from utils.schemas import CandidateEntity, SearchBrief, SourceDocument
@@ -72,11 +73,7 @@ def _discover_urls(search_queries: List[str]) -> List[str]:
     for query in search_queries[:3]:
         search_url = f"https://duckduckgo.com/html/?q={quote_plus(query)}"
         try:
-            response = requests.get(
-                search_url,
-                headers={"User-Agent": "Mozilla/5.0"},
-                timeout=10,
-            )
+            response = _http_get(search_url)
             response.raise_for_status()
         except Exception:
             continue
@@ -84,6 +81,7 @@ def _discover_urls(search_queries: List[str]) -> List[str]:
         soup = BeautifulSoup(response.text, "html.parser")
         for anchor in soup.select("a.result__a"):
             href = anchor.get("href", "").strip()
+            href = _normalize_result_url(href)
             if href and href not in seen:
                 seen.add(href)
                 discovered.append(href)
@@ -94,11 +92,7 @@ def _discover_urls(search_queries: List[str]) -> List[str]:
 
 def _fetch_document(url: str) -> Optional[SourceDocument]:
     try:
-        response = requests.get(
-            url,
-            headers={"User-Agent": "Mozilla/5.0"},
-            timeout=10,
-        )
+        response = _http_get(url)
         response.raise_for_status()
     except Exception:
         return None
@@ -217,3 +211,27 @@ def _normalize_domain(url: str) -> str:
     if hostname.startswith("www."):
         hostname = hostname[4:]
     return hostname
+
+
+def _normalize_result_url(url: str) -> str:
+    if not url:
+        return ""
+    if url.startswith("//"):
+        url = "https:" + url
+    parsed = urlparse(url)
+    if "duckduckgo.com" in parsed.netloc and parsed.path.startswith("/l/"):
+        query = parse_qs(parsed.query)
+        target = query.get("uddg", [""])[0]
+        if target:
+            return unquote(target)
+    return url
+
+
+def _http_get(url: str) -> Response:
+    headers = {"User-Agent": "Mozilla/5.0"}
+    try:
+        return requests.get(url, headers=headers, timeout=10)
+    except requests.exceptions.ProxyError:
+        session = requests.Session()
+        session.trust_env = False
+        return session.get(url, headers=headers, timeout=10)
