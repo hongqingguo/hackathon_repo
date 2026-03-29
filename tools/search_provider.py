@@ -58,12 +58,23 @@ def _search_mock_entities(brief: SearchBrief) -> List[CandidateEntity]:
 def _search_live_entities(brief: SearchBrief) -> List[CandidateEntity]:
     urls = _discover_urls(brief.search_queries or [brief.raw_query])
     candidates: List[CandidateEntity] = []
+    seen_domains: set[str] = set()
     for url in urls[:10]:
-        document = _fetch_document(url)
-        if not document:
+        primary_document = _fetch_document(url)
+        if not primary_document:
             continue
-        candidate = _candidate_from_document(brief, document)
+        domain = primary_document.domain
+        if domain in seen_domains:
+            continue
+
+        root_document = _fetch_root_document(primary_document)
+        canonical_document = root_document or primary_document
+        if _should_skip_document(brief, primary_document, canonical_document):
+            continue
+
+        candidate = _candidate_from_documents(brief, canonical_document, primary_document, root_document)
         candidates.append(candidate)
+        seen_domains.add(domain)
     return candidates
 
 
@@ -115,45 +126,63 @@ def _fetch_document(url: str) -> Optional[SourceDocument]:
     )
 
 
-def _candidate_from_document(brief: SearchBrief, document: SourceDocument) -> CandidateEntity:
-    name = _infer_name_from_document(document)
-    summary = document.snippet or document.content[:240]
-    signals = _infer_signals(brief, document)
+def _candidate_from_documents(
+    brief: SearchBrief,
+    canonical_document: SourceDocument,
+    primary_document: SourceDocument,
+    root_document: Optional[SourceDocument],
+) -> CandidateEntity:
+    source_documents = _combine_documents(primary_document, root_document)
+    name = _infer_name_from_document(canonical_document)
+    summary = canonical_document.snippet or canonical_document.content[:240]
+    signals = []
+    for document in source_documents:
+        signals.extend(_infer_signals(brief, document))
+
     facts = [
         {
-            "field": "page_title",
-            "value": document.title or name,
-            "source_url": document.url,
-            "snippet": document.snippet or document.content[:180],
+            "field": "canonical_title",
+            "value": canonical_document.title or name,
+            "source_url": canonical_document.url,
+            "snippet": canonical_document.snippet or canonical_document.content[:180],
         }
     ]
+    if primary_document.url != canonical_document.url:
+        facts.append(
+            {
+                "field": "discovery_page_title",
+                "value": primary_document.title or primary_document.domain,
+                "source_url": primary_document.url,
+                "snippet": primary_document.snippet or primary_document.content[:180],
+            }
+        )
     if brief.subject:
         facts.append(
             {
                 "field": "query_subject",
                 "value": brief.subject,
-                "source_url": document.url,
-                "snippet": document.snippet or document.content[:180],
+                "source_url": canonical_document.url,
+                "snippet": canonical_document.snippet or canonical_document.content[:180],
             }
         )
 
     return CandidateEntity(
         name=name,
         entity_type=brief.target_type,
-        canonical_url=document.url,
-        location=_infer_location(brief, document),
+        canonical_url=canonical_document.url,
+        location=_infer_location(brief, canonical_document),
         summary=summary,
-        tags=_infer_tags(brief, document),
+        tags=_infer_tags(brief, canonical_document),
         facts=facts,
-        signals=signals,
-        source_documents=[document],
+        signals=_dedupe_signal_dicts(signals),
+        source_documents=source_documents,
     )
 
 
 def _infer_name_from_document(document: SourceDocument) -> str:
     if document.title:
         return document.title.split("|")[0].split("-")[0].strip() or document.domain
-    return document.domain
+    return _domain_to_name(document.domain)
 
 
 def _infer_location(brief: SearchBrief, document: SourceDocument) -> str:
@@ -225,6 +254,88 @@ def _normalize_result_url(url: str) -> str:
         if target:
             return unquote(target)
     return url
+
+
+def _fetch_root_document(document: SourceDocument) -> Optional[SourceDocument]:
+    parsed = urlparse(document.url)
+    root_url = f"{parsed.scheme}://{parsed.netloc}/"
+    if root_url == document.url:
+        return document
+    return _fetch_document(root_url)
+
+
+def _should_skip_document(
+    brief: SearchBrief, primary_document: SourceDocument, canonical_document: SourceDocument
+) -> bool:
+    if brief.target_type != "product":
+        return False
+
+    primary_editorial = _looks_editorial(primary_document)
+    canonical_editorial = _looks_editorial(canonical_document)
+    vendor_like = _looks_vendor_like(canonical_document)
+
+    return primary_editorial and canonical_editorial and not vendor_like
+
+
+def _looks_editorial(document: SourceDocument) -> bool:
+    url_path = urlparse(document.url).path.lower()
+    text = f"{document.title} {document.snippet} {url_path}".lower()
+    editorial_terms = [
+        "best",
+        "top",
+        "compare",
+        "comparison",
+        "guide",
+        "tested",
+        "review",
+        "alternatives",
+        "/blog/",
+        "/library/",
+        "/resources/",
+        "/tools/",
+        "/news/",
+    ]
+    return any(term in text for term in editorial_terms)
+
+
+def _looks_vendor_like(document: SourceDocument) -> bool:
+    text = f"{document.title} {document.snippet} {document.content[:1500]}".lower()
+    vendor_terms = [
+        "pricing",
+        "contact sales",
+        "book demo",
+        "request demo",
+        "integrations",
+        "features",
+        "platform",
+        "product",
+        "customers",
+        "enterprise",
+    ]
+    return any(term in text for term in vendor_terms)
+
+
+def _combine_documents(primary_document: SourceDocument, root_document: Optional[SourceDocument]) -> List[SourceDocument]:
+    documents = [primary_document]
+    if root_document and root_document.url != primary_document.url:
+        documents.append(root_document)
+    unique: dict[str, SourceDocument] = {}
+    for document in documents:
+        unique[document.url] = document
+    return list(unique.values())
+
+
+def _dedupe_signal_dicts(signals: List[dict]) -> List[dict]:
+    unique: dict[tuple[str, str], dict] = {}
+    for signal in signals:
+        key = (signal["label"], signal["source_url"])
+        unique[key] = signal
+    return list(unique.values())
+
+
+def _domain_to_name(domain: str) -> str:
+    root = domain.split(".")[0].replace("-", " ").strip()
+    return " ".join(part.capitalize() for part in root.split())
 
 
 def _http_get(url: str) -> Response:
