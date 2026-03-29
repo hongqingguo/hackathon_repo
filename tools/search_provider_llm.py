@@ -7,10 +7,18 @@ import requests
 from bs4 import BeautifulSoup
 from requests import Response
 
-from llm.config import has_openai_config
+from llm.config import get_llm_provider, has_openai_config
 from llm.retrieval_service import RetrievalLLM
 from utils.mock_data import MOCK_ENTITIES
 from utils.schemas import CandidateEntity, SearchBrief, SourceDocument
+
+
+_RETRIEVAL_STATS = {
+    "provider": "",
+    "llm_successes": 0,
+    "fallbacks": 0,
+    "last_error": "",
+}
 
 
 def search_entities(brief: SearchBrief) -> List[CandidateEntity]:
@@ -20,6 +28,17 @@ def search_entities(brief: SearchBrief) -> List[CandidateEntity]:
     if backend in {"live", "tavily"}:
         return _search_live_entities(brief, backend)
     raise ValueError(f"Unsupported SEARCH_BACKEND: {backend}")
+
+
+def reset_retrieval_stats() -> None:
+    _RETRIEVAL_STATS["provider"] = get_llm_provider()
+    _RETRIEVAL_STATS["llm_successes"] = 0
+    _RETRIEVAL_STATS["fallbacks"] = 0
+    _RETRIEVAL_STATS["last_error"] = ""
+
+
+def get_retrieval_stats() -> dict:
+    return dict(_RETRIEVAL_STATS)
 
 
 def discover_search_urls(brief: SearchBrief) -> List[str]:
@@ -530,7 +549,7 @@ def _assess_document(
 ) -> dict:
     if has_openai_config():
         try:
-            return RetrievalLLM().invoke(
+            result = RetrievalLLM().invoke(
                 raw_query=brief.raw_query,
                 target_type=brief.target_type,
                 requested_attribute=brief.requested_attribute,
@@ -543,8 +562,13 @@ def _assess_document(
                 canonical_domain=canonical_domain,
                 first_party=first_party,
             ).model_dump()
-        except Exception:
-            pass
+            _RETRIEVAL_STATS["provider"] = get_llm_provider()
+            _RETRIEVAL_STATS["llm_successes"] += 1
+            return result
+        except Exception as exc:
+            _RETRIEVAL_STATS["provider"] = get_llm_provider()
+            _RETRIEVAL_STATS["fallbacks"] += 1
+            _RETRIEVAL_STATS["last_error"] = f"{type(exc).__name__}: {exc}"
     return _fallback_assessment(brief, document, candidate_name, first_party)
 
 

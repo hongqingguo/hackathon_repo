@@ -51,9 +51,20 @@ def _plan_request(state: GraphState) -> GraphState:
 def _research(state: GraphState) -> GraphState:
     agent = ResearchAgent()
     candidates = agent.run(state["brief"])
+    stats = agent.last_stats or {}
+    provider = stats.get("provider", "none")
+    llm_successes = stats.get("llm_successes", 0)
+    fallbacks = stats.get("fallbacks", 0)
+    last_error = stats.get("last_error", "")
+    trace_lines = [
+        f"[research] Search agent produced {len(candidates)} candidate entities after verification.",
+        f"[research] retrieval_provider={provider} llm_successes={llm_successes} fallbacks={fallbacks}",
+    ]
+    if last_error:
+        trace_lines.append(f"[research] retrieval_last_error={last_error}")
     return {
         "candidates": candidates,
-        "trace": [f"[research] Search agent produced {len(candidates)} candidate entities after verification."],
+        "trace": trace_lines,
     }
 
 

@@ -28,7 +28,7 @@ def get_model_name() -> str:
     if provider == "gemini":
         return os.getenv("GEMINI_MODEL", os.getenv("GOOGLE_MODEL", "gemini-1.5-flash"))
     if provider == "claude":
-        return os.getenv("ANTHROPIC_MODEL", "claude-3-5-haiku-latest")
+        return os.getenv("ANTHROPIC_MODEL", "claude-3-5-haiku-20241022")
     return os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 
 

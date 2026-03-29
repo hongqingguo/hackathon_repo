@@ -7,7 +7,9 @@ from tools.search_provider_llm import (
     expand_first_party_documents,
     fetch_root_document,
     fetch_source_document,
+    get_retrieval_stats,
     infer_candidate_name,
+    reset_retrieval_stats,
     search_entities,
     select_canonical_document,
 )
@@ -15,10 +17,20 @@ from utils.schemas import CandidateEntity, SearchBrief
 
 
 class SearchAgent:
+    def __init__(self) -> None:
+        self.last_stats: dict = {}
+
     def run(self, brief: SearchBrief) -> List[CandidateEntity]:
         if brief.search_backend == "mock":
+            self.last_stats = {
+                "provider": "none",
+                "llm_successes": 0,
+                "fallbacks": 0,
+                "last_error": "",
+            }
             return search_entities(brief)
 
+        reset_retrieval_stats()
         urls = discover_search_urls(brief)
         candidates: List[CandidateEntity] = []
         seen_domains: set[str] = set()
@@ -52,4 +64,5 @@ class SearchAgent:
             )
             seen_domains.add(canonical_document.domain)
 
+        self.last_stats = get_retrieval_stats()
         return candidates
