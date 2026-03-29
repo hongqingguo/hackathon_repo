@@ -273,7 +273,7 @@ def _expand_domain_documents(
     documents = list(seed_documents)
     seen_urls = {document.url for document in documents}
     for url, _score in sorted(scored_links.items(), key=lambda item: item[1], reverse=True):
-        if len(documents) >= 5:
+        if len(documents) >= 3:
             break
         if url in seen_urls:
             continue
@@ -355,13 +355,13 @@ def _add_cross_domain_documents(
     canonical_document: SourceDocument,
     source_documents: List[SourceDocument],
 ) -> List[SourceDocument]:
-    queries = _build_corroboration_queries(brief, candidate_name)
+    queries = _build_corroboration_queries(brief, candidate_name, canonical_document.domain)
     urls = _discover_urls_via_tavily(queries) if backend == "tavily" else _discover_urls_via_duckduckgo(queries)
     combined = list(source_documents)
     seen_urls = {document.url for document in combined}
     seen_domains = {document.domain for document in combined}
     for url in urls:
-        if len(combined) >= 7:
+        if len(combined) >= 6:
             break
         document = _fetch_document(url)
         if not document or document.url in seen_urls or document.domain == canonical_document.domain:
@@ -385,11 +385,14 @@ def _add_cross_domain_documents(
     return combined
 
 
-def _build_corroboration_queries(brief: SearchBrief, candidate_name: str) -> List[str]:
+def _build_corroboration_queries(brief: SearchBrief, candidate_name: str, canonical_domain: str) -> List[str]:
+    requested = brief.requested_attribute or "relevant facts"
+    goal = brief.investigation_goal or requested
+    subject = brief.subject or brief.target_type
     return [
-        f"\"{candidate_name}\" {brief.requested_attribute} {brief.investigation_goal}".strip(),
-        f"\"{candidate_name}\" {brief.subject} {brief.requested_attribute}".strip(),
-        f"\"{candidate_name}\" {brief.target_type} {brief.investigation_goal}".strip(),
+        f"\"{candidate_name}\" {requested} {goal} -site:{canonical_domain}".strip(),
+        f"\"{candidate_name}\" {subject} {requested} review -site:{canonical_domain}".strip(),
+        f"\"{candidate_name}\" {brief.target_type} {goal} comparison -site:{canonical_domain}".strip(),
     ]
 
 
@@ -522,14 +525,9 @@ def _infer_tags(brief: SearchBrief, document: SourceDocument) -> List[str]:
 def _infer_signals(brief: SearchBrief, document: SourceDocument) -> List[dict]:
     signals = []
     content_lower = document.content.lower()
-    terms = [brief.requested_attribute, brief.investigation_goal, brief.subject]
-    for term in terms:
-        if not term:
-            continue
-        normalized = term.strip().lower()
-        if len(normalized) < 4:
-            continue
-        if normalized in content_lower:
+    terms = _signal_terms(brief)
+    for normalized in terms:
+        if normalized in content_lower or normalized in document.title.lower() or normalized in document.snippet.lower():
             signals.append(
                 {
                     "label": normalized,
@@ -538,6 +536,21 @@ def _infer_signals(brief: SearchBrief, document: SourceDocument) -> List[dict]:
                 }
             )
     return signals
+
+
+def _signal_terms(brief: SearchBrief) -> List[str]:
+    terms: set[str] = set()
+    for value in [brief.requested_attribute, brief.investigation_goal, brief.subject]:
+        if not value:
+            continue
+        normalized = value.strip().lower()
+        if len(normalized) >= 4:
+            terms.add(normalized)
+        for part in re.split(r"[^a-z0-9]+", normalized):
+            if len(part) >= 4:
+                terms.add(part)
+    terms.update({"pricing", "integration", "integrations", "workflow", "automation"})
+    return sorted(terms)
 
 
 def _assess_document(
