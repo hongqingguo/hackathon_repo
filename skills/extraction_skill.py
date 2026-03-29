@@ -4,6 +4,10 @@ from utils.schemas import CandidateEntity, Evidence, ExtractedEntity, SearchBrie
 
 class ExtractionSkill:
     def run(self, brief: SearchBrief, candidate: CandidateEntity) -> ExtractedEntity:
-        extracted = extract_entity_tool.invoke({"candidate": candidate.__dict__})
+        candidate_payload = {
+            **candidate.__dict__,
+            "source_documents": [document.__dict__ for document in candidate.source_documents],
+        }
+        extracted = extract_entity_tool.invoke({"candidate": candidate_payload})
         evidence = [Evidence(**item) for item in extracted["evidence"]]
         return ExtractedEntity(**{**extracted, "evidence": evidence})

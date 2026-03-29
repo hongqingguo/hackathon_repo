@@ -46,6 +46,7 @@ MOCK_ENTITIES = [
                 "snippet": "Our next phase depends on better workflow automation for cross-functional processes.",
             },
         ],
+        source_documents=[],
     ),
     CandidateEntity(
         name="LedgerLeap",
@@ -86,6 +87,7 @@ MOCK_ENTITIES = [
                 "snippet": "We are hiring operators who can reduce compliance workflow complexity across onboarding.",
             }
         ],
+        source_documents=[],
     ),
     CandidateEntity(
         name="Northstar Health",
@@ -121,6 +123,7 @@ MOCK_ENTITIES = [
                 "snippet": "Healthcare partners still face major data integration friction.",
             }
         ],
+        source_documents=[],
     ),
     CandidateEntity(
         name="Dana Kim",
@@ -156,6 +159,7 @@ MOCK_ENTITIES = [
                 "snippet": "Dana leads platform investment priorities across engineering.",
             }
         ],
+        source_documents=[],
     ),
     CandidateEntity(
         name="OpsPilot AI",
@@ -191,5 +195,6 @@ MOCK_ENTITIES = [
                 "snippet": "Customers use OpsPilot AI to automate enterprise workflow approvals.",
             }
         ],
+        source_documents=[],
     ),
 ]

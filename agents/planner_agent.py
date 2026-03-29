@@ -20,6 +20,7 @@ class PlannerAgent:
                 requested_attribute=llm_output.requested_attribute,
                 investigation_goal=llm_output.investigation_goal,
                 search_queries=llm_output.search_queries or fallback.search_queries,
+                search_backend=fallback.search_backend,
             )
         except Exception:
             return fallback

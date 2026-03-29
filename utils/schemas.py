@@ -11,6 +11,7 @@ class SearchBrief:
     requested_attribute: str
     investigation_goal: str
     search_queries: List[str]
+    search_backend: str
 
 
 @dataclass
@@ -23,6 +24,15 @@ class Evidence:
 
 
 @dataclass
+class SourceDocument:
+    url: str
+    domain: str
+    title: str
+    snippet: str
+    content: str
+
+
+@dataclass
 class CandidateEntity:
     name: str
     entity_type: str
@@ -32,6 +42,7 @@ class CandidateEntity:
     tags: List[str]
     facts: List[dict]
     signals: List[dict]
+    source_documents: List[SourceDocument]
 
 
 @dataclass
@@ -43,6 +54,8 @@ class ExtractedEntity:
     summary: str
     observed_fact_labels: List[str]
     signal_labels: List[str]
+    source_document_count: int
+    source_domains: List[str]
     evidence: List[Evidence]
 
 
@@ -67,6 +80,7 @@ class ValidatedEntity(ReasonedEntity):
     validation_status: str
     validation_notes: str
     validation_score: float
+    validation_scope: str
     corroborated_fields: List[str]
     conflicting_fields: List[str]
     validation_source_urls: List[str]

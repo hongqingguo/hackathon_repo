@@ -4,6 +4,34 @@
 
 Build a business-oriented multi-agent system that turns a natural-language growth request into a ranked lead list with actionable next steps.
 
+## Current Implementation Status
+
+The repository has already moved beyond the initial outline in several important ways:
+
+- LangGraph workflow orchestration is implemented
+- planner and reasoning steps support structured LLM-backed execution with deterministic fallback
+- search now uses a provider interface:
+  - `SEARCH_BACKEND=mock` is implemented
+  - `SEARCH_BACKEND=live` is reserved for the next integration step
+- validation is domain-aware and distinguishes:
+  - `cross_domain`
+  - `same_domain_only`
+  - `insufficient`
+- each run now generates matched output pairs:
+  - `output_<run_id>.csv`
+  - `summary_<run_id>.md`
+- investigation works across:
+  - companies
+  - people
+  - products
+
+Still pending for the next phase:
+
+- production search backend
+- richer live source fetching and parsing
+- human review checkpoints
+- lightweight UI or API layer
+
 Target demo:
 
 ```bash
@@ -319,8 +347,8 @@ Example scoring logic:
 ## Step 8. Save Deliverables
 
 Save:
-- `output.csv`
-- `summary.md`
+- `output_<run_id>.csv`
+- `summary_<run_id>.md`
 
 `summary.md` should include:
 - what was searched
@@ -351,14 +379,25 @@ project/
     qualification_skill.py
     validation_skill.py
     scoring_skill.py
-  utils/
-    search.py
-    scrape.py
-    llm.py
+    formatting_skill.py
+  tools/
+    search_provider.py
+    agent_tools.py
+  llm/
+    client.py
+    config.py
+    prompts.py
     schemas.py
+    planner_service.py
+    reasoner_service.py
+  utils/
+    schemas.py
+    query_parser.py
+    mock_data.py
+    formatters.py
   output/
-    output.csv
-    summary.md
+    output_<run_id>.csv
+    summary_<run_id>.md
 ```
 
 ---

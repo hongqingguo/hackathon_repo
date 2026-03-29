@@ -16,6 +16,7 @@ class ValidationSkill:
             validation_status=result["validation_status"],
             validation_notes=result["validation_notes"],
             validation_score=result["validation_score"],
+            validation_scope=result["validation_scope"],
             corroborated_fields=result["corroborated_fields"],
             conflicting_fields=result["conflicting_fields"],
             validation_source_urls=result["validation_source_urls"],

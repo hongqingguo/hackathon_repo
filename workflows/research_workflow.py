@@ -41,7 +41,10 @@ def _plan_request(state: GraphState) -> GraphState:
     brief = agent.run(state["query"])
     return {
         "brief": brief,
-        "trace": [f"[planner] Target type={brief.target_type}, subject={brief.subject or 'n/a'}, attribute={brief.requested_attribute or 'n/a'}"],
+        "trace": [
+            f"[planner] Target type={brief.target_type}, subject={brief.subject or 'n/a'}, "
+            f"attribute={brief.requested_attribute or 'n/a'}, backend={brief.search_backend}"
+        ],
     }
 
 

@@ -1,7 +1,7 @@
 from typing import List
 
 from tools.agent_tools import search_entities_tool
-from utils.schemas import CandidateEntity, SearchBrief
+from utils.schemas import CandidateEntity, SearchBrief, SourceDocument
 
 
 class ResearchAgent:
@@ -15,4 +15,8 @@ class ResearchAgent:
                 "investigation_goal": brief.investigation_goal,
             }
         )
-        return [CandidateEntity(**candidate) for candidate in raw_candidates]
+        candidates: List[CandidateEntity] = []
+        for candidate in raw_candidates:
+            source_documents = [SourceDocument(**doc) for doc in candidate.get("source_documents", [])]
+            candidates.append(CandidateEntity(**{**candidate, "source_documents": source_documents}))
+        return candidates

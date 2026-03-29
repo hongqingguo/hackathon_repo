@@ -1,6 +1,8 @@
 from langchain_core.tools import tool
+from urllib.parse import urlparse
 
-from utils.mock_data import MOCK_ENTITIES
+from tools.search_provider import search_entities
+from utils.schemas import SearchBrief
 
 
 @tool
@@ -12,39 +14,17 @@ def search_entities_tool(
     investigation_goal: str,
 ) -> list[dict]:
     """Search candidate entities from the local knowledge source."""
-    scored_candidates = []
-    for entity in MOCK_ENTITIES:
-        score = 0
-        haystack = " ".join(
-            [
-                entity.name,
-                entity.entity_type,
-                entity.location,
-                entity.summary,
-                " ".join(entity.tags),
-                " ".join(fact["value"] for fact in entity.facts),
-                " ".join(signal["label"] for signal in entity.signals),
-            ]
-        ).lower()
-
-        if entity.entity_type == target_type:
-            score += 3
-        if subject and subject.lower() in haystack:
-            score += 3
-        if geography and geography.lower() in entity.location.lower():
-            score += 2
-        if requested_attribute:
-            requested_terms = [term for term in requested_attribute.lower().split() if len(term) > 2]
-            score += sum(1 for term in requested_terms if term in haystack)
-        if investigation_goal:
-            goal_terms = [term for term in investigation_goal.lower().split() if len(term) > 3]
-            score += sum(1 for term in goal_terms if term in haystack)
-
-        if score > 0:
-            scored_candidates.append((score, entity))
-
-    scored_candidates.sort(key=lambda item: item[0], reverse=True)
-    return [item[1].__dict__ for item in scored_candidates[:10]]
+    brief = SearchBrief(
+        raw_query="",
+        target_type=target_type,
+        subject=subject,
+        geography=geography,
+        requested_attribute=requested_attribute,
+        investigation_goal=investigation_goal,
+        search_queries=[],
+        search_backend="",
+    )
+    return [_serialize_candidate(entity) for entity in search_entities(brief)]
 
 
 @tool
@@ -81,6 +61,14 @@ def extract_entity_tool(candidate: dict) -> dict:
         "summary": candidate["summary"],
         "observed_fact_labels": [f"{fact['field']}:{fact['value']}" for fact in candidate["facts"]],
         "signal_labels": [signal["label"] for signal in candidate["signals"]],
+        "source_document_count": len(candidate.get("source_documents", [])),
+        "source_domains": sorted(
+            {
+                document.get("domain", "")
+                for document in candidate.get("source_documents", [])
+                if document.get("domain", "")
+            }
+        ),
         "evidence": evidence,
     }
 
@@ -94,6 +82,7 @@ def compare_evidence_tool(
     """Compare claims across sources and estimate reliability."""
     field_to_value_sources: dict[str, dict[str, set[str]]] = {}
     validation_source_urls: set[str] = set(selected_source_urls)
+    validation_domains: set[str] = set()
 
     for item in evidence:
         field = item["field"]
@@ -104,50 +93,93 @@ def compare_evidence_tool(
         field_to_value_sources.setdefault(field, {}).setdefault(value, set()).add(source_url)
         if source_url:
             validation_source_urls.add(source_url)
+            domain = _normalize_domain(source_url)
+            if domain:
+                validation_domains.add(domain)
 
     corroborated_fields: list[str] = []
     conflicting_fields: list[str] = []
+    weak_same_domain_support: list[str] = []
 
     for field, value_sources in field_to_value_sources.items():
         for value, sources in value_sources.items():
-            if len(sources) >= 2:
+            domains = {_normalize_domain(source) for source in sources if _normalize_domain(source)}
+            if len(domains) >= 2:
                 corroborated_fields.append(f"{field}:{value}")
+            elif len(sources) >= 2:
+                weak_same_domain_support.append(f"{field}:{value}")
         if field in {"entity_name", "canonical_url", "location", "category", "pricing_model"} and len(value_sources) > 1:
             conflicting_fields.append(field)
 
-    if fact_match_type == "observed_exact" and selected_source_urls:
+    selected_domains = {_normalize_domain(url) for url in selected_source_urls if _normalize_domain(url)}
+    if fact_match_type == "observed_exact" and len(selected_domains) >= 2:
         corroborated_fields.append("best_matching_fact")
 
     corroborated_fields = sorted(set(corroborated_fields))
     conflicting_fields = sorted(set(conflicting_fields))
+    weak_same_domain_support = sorted(set(weak_same_domain_support))
 
     score = 0.35
     score += min(len(corroborated_fields) * 0.18, 0.36)
-    score += min(len(validation_source_urls) * 0.07, 0.21)
+    score += min(len(validation_domains) * 0.1, 0.3)
+    score += min(len(weak_same_domain_support) * 0.03, 0.09)
     score -= min(len(conflicting_fields) * 0.2, 0.4)
     score = round(max(0.0, min(score, 1.0)), 2)
 
     if conflicting_fields:
         status = "needs_review"
+        validation_scope = "cross_domain_conflict" if len(validation_domains) >= 2 else "same_domain_conflict"
         notes = (
             f"Conflicting source evidence was detected for {', '.join(conflicting_fields)}. "
             "A human should review the attached URLs before acting on the result."
         )
     elif corroborated_fields:
         status = "high" if score >= 0.75 else "medium"
+        validation_scope = "cross_domain"
         notes = (
-            f"The result is supported by cross-source agreement on {', '.join(corroborated_fields)}. "
+            f"The result is supported by cross-domain agreement on {', '.join(corroborated_fields)}. "
             f"Fact selection remains {fact_match_type}."
+        )
+    elif weak_same_domain_support:
+        status = "low"
+        validation_scope = "same_domain_only"
+        notes = (
+            f"Support was found across multiple pages on the same domain for {', '.join(weak_same_domain_support)}, "
+            "but true cross-domain corroboration is still missing."
         )
     else:
         status = "low"
-        notes = "The result relies on limited source overlap, so the evidence is useful but not strongly corroborated yet."
+        validation_scope = "insufficient"
+        notes = "The result relies on limited source overlap and lacks cross-domain corroboration."
 
     return {
         "validation_status": status,
         "validation_notes": notes,
         "validation_score": score,
+        "validation_scope": validation_scope,
         "corroborated_fields": corroborated_fields,
         "conflicting_fields": conflicting_fields,
-        "validation_source_urls": sorted(validation_source_urls),
+        "validation_source_urls": sorted(validation_domains),
+    }
+
+
+def _normalize_domain(url: str) -> str:
+    parsed = urlparse(url)
+    hostname = parsed.netloc.lower().strip()
+    if hostname.startswith("www."):
+        hostname = hostname[4:]
+    return hostname
+
+
+def _serialize_candidate(entity) -> dict:
+    return {
+        "name": entity.name,
+        "entity_type": entity.entity_type,
+        "canonical_url": entity.canonical_url,
+        "location": entity.location,
+        "summary": entity.summary,
+        "tags": entity.tags,
+        "facts": entity.facts,
+        "signals": entity.signals,
+        "source_documents": [doc.__dict__ for doc in entity.source_documents],
     }

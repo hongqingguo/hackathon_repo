@@ -1,4 +1,5 @@
 import re
+import os
 
 from utils.schemas import SearchBrief
 
@@ -57,6 +58,7 @@ def parse_query(query: str) -> SearchBrief:
         requested_attribute=requested_attribute or "",
         investigation_goal=investigation_goal,
         search_queries=search_queries,
+        search_backend=os.getenv("SEARCH_BACKEND", "mock").strip().lower(),
     )
 
 

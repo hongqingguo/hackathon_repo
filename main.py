@@ -16,6 +16,7 @@ def main() -> int:
     print(f"Run completed for query: {query}")
     print(f"CSV saved to: {result.csv_path}")
     print(f"Summary saved to: {result.summary_path}")
+    print(f"JSON saved to: {result.json_path}")
     print(f"Results found: {len(result.leads)}")
     return 0
 
